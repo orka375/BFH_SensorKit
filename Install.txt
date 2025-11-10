@@ -1,0 +1,54 @@
+
+
+#INSTALL
+
+sudo apt install i2c-tools python3-smbus hostapd dnsmasq python3-pip git -y
+pip install setuptools paho-mqtt mpu6050-raspberrypi --break-system-packages
+
+sudo systemctl stop dnsmasq hostapd
+
+sudo nano /etc/dhcpcd.conf
+
+# add
+    interface wlan0
+        static ip_address=192.168.4.1/24
+        nohook wpa_supplicant
+
+
+
+sudo rm /etc/NetworkManager/system-connections/*.nmconnection
+sudo rm /etc/wpa_supplicant/wpa_supplicant.conf
+
+sudo nano /etc/hostapd/hostapd.conf
+
+# add
+
+
+sudo nano /etc/default/hostapd
+# add
+    DAEMON_CONF="/etc/hostapd/hostapd.conf"
+
+
+
+sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
+sudo nano /etc/dnsmasq.conf
+
+# add 
+    interface=wlan0
+    dhcp-range=192.168.4.2,192.168.4.20,255.255.255.0,24h
+
+
+sudo systemctl unmask hostapd
+sudo systemctl enable hostapd
+sudo systemctl enable dnsmasq
+
+sudo systemctl restart dnsmasq
+sudo systemctl restart hostapd
+
+git clone https://github.com/orka375/BFH_SensorKit.git
+
+
+sudo systemctl stop wpa_supplicant && sudo systemctl disable wpa_supplicant && sudo systemctl stop NetworkManager && sudo systemctl disable NetworkManager && sudo reboot
+
+# sudo reboot/reboot
+

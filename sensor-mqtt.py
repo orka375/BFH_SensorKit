@@ -5,17 +5,37 @@ import subprocess
 import re
 import paho.mqtt.client as mqtt
 from gpiozero import RGBLED, Button
+from gpiozero import DigitalInputDevice
+
 from time import sleep
 from Functions import *
 from mpu6050 import mpu6050
 import time
 
+
+
+
 # Define RGB LED pins (change as needed)
-led = RGBLED(red=6, green=13, blue=5)
+led = RGBLED(red=13, green=19, blue=6)
 button1 = Button(10,pull_up=False)
 button2 = Button(9,pull_up=False)
+freq_pin = DigitalInputDevice(21)
 
 
+last_edge_time = None
+frequency = 0.0
+
+
+def on_rising_edge():
+    global last_edge_time, frequency
+    now = time.time()
+    if last_edge_time is not None:
+        period = now - last_edge_time
+        if period > 0:
+            frequency = 1.0 / period
+    last_edge_time = now
+
+freq_pin.when_activated = on_rising_edge
 
 def connectHW():
 
@@ -74,10 +94,6 @@ def connectBroker(broker_ip="127.0.0.1"):
 
 
 def measure(sensor,array):
-
-
-
-
             # --- Sample accelerometer data ---
             accel = sensor.get_accel_data()
             # Store full reading with timestamp
@@ -141,6 +157,8 @@ while True:
             case States.Running: #GREEN
                 led.color = (0, 1, 0)
 
+
+
                 for ix,s in enumerate(sensors):
                     measure(s,dataarray[ix])
 
@@ -156,6 +174,16 @@ while True:
                         client.publish(topic, payload)
                         print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
                         dataarray[ix] = []
+
+
+                    #FREQUENCY
+                    topic = "Sensor/Frequency"
+                    payload = json.dumps({
+                        "timestamp": time.time_ns(),
+                        "frequency_hz": round(frequency, 2)
+                    })
+                    client.publish(topic, payload)
+                    print(f"Published frequency: {frequency:.2f} Hz")
                     last_publish = time.time()
 
 
