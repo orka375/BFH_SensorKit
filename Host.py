@@ -5,6 +5,7 @@ import paho.mqtt.client as mqtt
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import deque
+import time
 
 # ===============================
 # Configuration
@@ -14,9 +15,13 @@ MQTT_PORT = 1883
 TOPIC_SENSOR1 = "Sensor/s104"
 TOPIC_SENSOR2 = "Sensor/s105"
 TOPIC_FREQ = "Sensor/Frequency"
-CSV_FILE = "all_sensor_data.csv"
+
 MAX_POINTS = 4600
 INITIAL_POINTS = 100
+
+
+timestring = time.strftime("%d_%m_%H_%M_%S")
+CSV_FILE = "Messdaten/Messung_" + timestring + ".csv"
 
 # ===============================
 # Data buffers
@@ -44,42 +49,63 @@ sensor2_active = False
 freq_active = False
 
 # ===============================
-# CSV Logging (all in one file)
+# CSV Logging (sensor data + separate frequency file)
 # ===============================
 csv_lock = threading.Lock()
 
-def log_to_csv(timestamp, s1, s2, freq):
+# File names
+SENSOR_CSV_FILE = CSV_FILE
+FREQ_CSV_FILE = CSV_FILE.replace(".csv", "_freq.csv")
+
+# Store the latest known readings
+latest_s1 = {'x': '', 'y': '', 'z': ''}
+latest_s2 = {'x': '', 'y': '', 'z': ''}
+
+def log_sensor_samples(timestamp, s1_samples=None, s2_samples=None):
     """
-    Logs a single synchronized line for all data types.
-    Each call logs whatever is available at that moment.
+    Logs all sensor samples to the main CSV file.
+    """
+    global latest_s1, latest_s2
+
+    with csv_lock:
+        with open(SENSOR_CSV_FILE, 'a', newline='') as f:
+            writer = csv.writer(f)
+
+            if s1_samples:
+                for s in s1_samples:
+                    latest_s1 = s
+                    writer.writerow([
+                        timestamp,
+                        s.get('x', ''), s.get('y', ''), s.get('z', ''),
+                        latest_s2.get('x', ''), latest_s2.get('y', ''), latest_s2.get('z', '')
+                    ])
+
+            elif s2_samples:
+                for s in s2_samples:
+                    latest_s2 = s
+                    writer.writerow([
+                        timestamp,
+                        latest_s1.get('x', ''), latest_s1.get('y', ''), latest_s1.get('z', ''),
+                        s.get('x', ''), s.get('y', ''), s.get('z', '')
+                    ])
+
+def log_frequency(timestamp, freq):
+    """
+    Logs frequency data to its own CSV file.
     """
     with csv_lock:
-        with open(CSV_FILE, 'a', newline='') as f:
+        with open(FREQ_CSV_FILE, 'a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([
-                timestamp,
-                s1.get('x') if s1 else '',
-                s1.get('y') if s1 else '',
-                s1.get('z') if s1 else '',
-                s2.get('x') if s2 else '',
-                s2.get('y') if s2 else '',
-                s2.get('z') if s2 else '',
-                freq if freq is not None else ''
-            ])
+            writer.writerow([timestamp, freq])
 
 # ===============================
 # MQTT Callbacks
 # ===============================
-def on_connect(client, userdata, flags, rc):
-    print(f"Connected to MQTT broker with code {rc}")
-    client.subscribe([(TOPIC_SENSOR1, 0), (TOPIC_SENSOR2, 0), (TOPIC_FREQ, 0)])
-    print(f"Subscribed to {TOPIC_SENSOR1}, {TOPIC_SENSOR2}, {TOPIC_FREQ}")
-
 def on_message(client, userdata, msg):
     global sensor1_active, sensor2_active, freq_active
 
     payload = json.loads(msg.payload.decode('utf-8'))
-    timestamp = payload.get("timestamp", "")
+    timestamp = str(payload.get("timestamp", ""))
 
     with data_lock:
         if msg.topic == TOPIC_SENSOR1:
@@ -87,21 +113,27 @@ def on_message(client, userdata, msg):
             if samples:
                 sensor1_active = True
                 msg_queue1.extend(samples)
-                # Log the last sample from this batch
-                log_to_csv(timestamp, samples[-1], None, None)
+                log_sensor_samples(timestamp, s1_samples=samples)
 
         elif msg.topic == TOPIC_SENSOR2:
             samples = payload.get('samples', [])
             if samples:
                 sensor2_active = True
                 msg_queue2.extend(samples)
-                log_to_csv(timestamp, None, samples[-1], None)
+                log_sensor_samples(timestamp, s2_samples=samples)
 
         elif msg.topic == TOPIC_FREQ:
             freq = payload.get('frequency_hz', 0.0)
             freq_active = True
             msg_queue_freq.append(freq)
-            log_to_csv(timestamp, None, None, freq)
+            log_frequency(timestamp, freq)
+
+
+def on_connect(client, userdata, flags, rc):
+    print(f"Connected to MQTT broker with code {rc}")
+    client.subscribe([(TOPIC_SENSOR1, 0), (TOPIC_SENSOR2, 0), (TOPIC_FREQ, 0)])
+    print(f"Subscribed to {TOPIC_SENSOR1}, {TOPIC_SENSOR2}, {TOPIC_FREQ}")
+
 
 # ===============================
 # Plot setup

@@ -162,29 +162,29 @@ while True:
                 for ix,s in enumerate(sensors):
                     measure(s,dataarray[ix])
 
-            
+                now = time.time_ns(),
+                for ix,s in enumerate(sensors):
+                    topic = "Sensor/"+names[ix]
+
+                    payload = json.dumps({
+                        "timestamp": now,
+                        "samples": dataarray[ix],
+                    
+                    })
+                    client.publish(topic, payload)
+                    print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
+                    dataarray[ix] = []
+
                 if (time.time() - last_publish) >= 0.1:
-                    for ix,s in enumerate(sensors):
-                        topic = "Sensor/"+names[ix]
-
-                        payload = json.dumps({
-                            "timestamp": time.time_ns(),
-                            "samples": dataarray[ix]
-                        })
-                        client.publish(topic, payload)
-                        print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
-                        dataarray[ix] = []
-
-
                     #FREQUENCY
                     topic = "Sensor/Frequency"
                     payload = json.dumps({
-                        "timestamp": time.time_ns(),
+                        "timestamp": now,
                         "frequency_hz": round(frequency, 2)
                     })
                     client.publish(topic, payload)
                     print(f"Published frequency: {frequency:.2f} Hz")
-                    last_publish = time.time()
+                    # last_publish = time.time()
 
 
                 if not button1.is_active:
