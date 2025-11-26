@@ -47,7 +47,6 @@ data_lock = threading.Lock()
 sensor1_active = False
 sensor2_active = False
 freq_active = False
-
 # ===============================
 # CSV Logging (sensor data + separate frequency file)
 # ===============================
@@ -56,6 +55,16 @@ csv_lock = threading.Lock()
 # File names
 SENSOR_CSV_FILE = CSV_FILE
 FREQ_CSV_FILE = CSV_FILE.replace(".csv", "_freq.csv")
+
+# Write headers initially
+with csv_lock:
+    with open(SENSOR_CSV_FILE, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['timestamp','x1','y1','z1','x2','y2','z2'])  # header
+
+    with open(FREQ_CSV_FILE, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['timestamp','frequency_hz'])  # header
 
 # Store the latest known readings
 latest_s1 = {'x': '', 'y': '', 'z': ''}
@@ -97,6 +106,7 @@ def log_frequency(timestamp, freq):
         with open(FREQ_CSV_FILE, 'a', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, freq])
+
 
 # ===============================
 # MQTT Callbacks

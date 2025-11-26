@@ -94,15 +94,19 @@ def connectBroker(broker_ip="127.0.0.1"):
 
 
 def measure(sensor,array):
-            # --- Sample accelerometer data ---
-            accel = sensor.get_accel_data()
-            # Store full reading with timestamp
-            array.append({
-                "t": time.time_ns(),
-                "x": round(accel["x"], 3),
-                "y": round(accel["y"], 3),
-                "z": round(accel["z"], 3)
-            })
+    try:
+        # --- Sample accelerometer data ---
+        accel = sensor.get_accel_data()
+        # Store full reading with timestamp
+        array.append({
+            "t": time.time_ns(),
+            "x": round(accel["x"], 3),
+            "y": round(accel["y"], 3),
+            "z": round(accel["z"], 3)
+        })
+    except IOError:
+        print("Caught IOError")
+        pass
 
             
 
@@ -117,6 +121,11 @@ last_publish = time.time()
 state = States.Default
 while True:
     try:
+
+        if button2.is_active:
+            raise Exception
+
+
         match state:
 
             case States.Default: #OFF
@@ -172,7 +181,7 @@ while True:
                     
                     })
                     client.publish(topic, payload)
-                    print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
+                    # print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
                     dataarray[ix] = []
 
                 if (time.time() - last_publish) >= 0.1:
@@ -183,7 +192,7 @@ while True:
                         "frequency_hz": round(frequency, 2)
                     })
                     client.publish(topic, payload)
-                    print(f"Published frequency: {frequency:.2f} Hz")
+                    # print(f"Published frequency: {frequency:.2f} Hz")
                     # last_publish = time.time()
 
 
@@ -198,6 +207,7 @@ while True:
 
 
     except Exception as e:
+        print(e)
         state = States.Default
 
 
