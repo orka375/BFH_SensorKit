@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from collections import deque
 import time
+import os
+from tkinter import messagebox
+import tkinter as tk
 
 # ===============================
 # Configuration
@@ -141,6 +144,7 @@ def on_message(client, userdata, msg):
 
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to MQTT broker with code {rc}")
+    # Subscribe with QoS 0 (no buffering/persistence)
     client.subscribe([(TOPIC_SENSOR1, 0), (TOPIC_SENSOR2, 0), (TOPIC_FREQ, 0)])
     print(f"Subscribed to {TOPIC_SENSOR1}, {TOPIC_SENSOR2}, {TOPIC_FREQ}")
 
@@ -235,7 +239,8 @@ ani = FuncAnimation(fig, update, interval=100, blit=False)
 # ===============================
 # MQTT Client
 # ===============================
-client = mqtt.Client()
+# Use clean_session=True to prevent message buffering when disconnected
+client = mqtt.Client(clean_session=True)
 client.on_connect = on_connect
 client.on_message = on_message
 client.connect(MQTT_BROKER, MQTT_PORT, 60)
@@ -247,3 +252,38 @@ client.loop_start()
 plt.tight_layout()
 plt.show()
 client.loop_stop()
+
+# ===============================
+# Cleanup and save prompt
+# ===============================
+def cleanup_data_files():
+    """Prompt user to save or delete data files using a GUI dialog."""
+    # Create a hidden root window
+    root = tk.Tk()
+    root.withdraw()
+    
+    # Show yes/no dialog
+    response = messagebox.askyesno(
+        "Save Data", 
+        "Do you want to save the recorded data?\n\n"
+        f"Files:\n- {os.path.basename(SENSOR_CSV_FILE)}\n- {os.path.basename(FREQ_CSV_FILE)}"
+    )
+    
+    if response:  # User clicked Yes
+        messagebox.showinfo(
+            "Data Saved",
+            f"Data saved to:\n\n{SENSOR_CSV_FILE}\n{FREQ_CSV_FILE}"
+        )
+    else:  # User clicked No
+        try:
+            if os.path.exists(SENSOR_CSV_FILE):
+                os.remove(SENSOR_CSV_FILE)
+            if os.path.exists(FREQ_CSV_FILE):
+                os.remove(FREQ_CSV_FILE)
+            messagebox.showinfo("Data Deleted", "Data files have been deleted.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error deleting files:\n{e}")
+    
+    root.destroy()
+
+cleanup_data_files()

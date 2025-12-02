@@ -76,7 +76,8 @@ def connectHost():
 def connectBroker(broker_ip="127.0.0.1"):
 
     
-    client = mqtt.Client(client_id="sim_accel_pub", callback_api_version=1)
+    # Use clean_session=True to prevent message buffering when host is not connected
+    client = mqtt.Client(client_id="sim_accel_pub", clean_session=True, callback_api_version=1)
 
     retry_delay = 5  # seconds between retries
 
@@ -180,7 +181,8 @@ while True:
                         "samples": dataarray[ix],
                     
                     })
-                    client.publish(topic, payload)
+                    # Publish with QoS 0 (fire and forget, no buffering) and retain=False
+                    client.publish(topic, payload, qos=0, retain=False)
                     # print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
                     dataarray[ix] = []
 
@@ -191,7 +193,8 @@ while True:
                         "timestamp": now,
                         "frequency_hz": round(frequency, 2)
                     })
-                    client.publish(topic, payload)
+                    # Publish with QoS 0 (fire and forget, no buffering) and retain=False
+                    client.publish(topic, payload, qos=0, retain=False)
                     # print(f"Published frequency: {frequency:.2f} Hz")
                     # last_publish = time.time()
 
@@ -199,7 +202,7 @@ while True:
                 if not button1.is_active:
                     client.loop_stop()
                     client.disconnect()
-                    state = States.Idelling
+                    state = States.ConnectingBroker
 
                 
 
