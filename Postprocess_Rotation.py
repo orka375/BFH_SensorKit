@@ -317,6 +317,62 @@ axf.grid(True)
 axf.legend()
 plt.show()
 
+
+# -----------------------------------------
+# Create polar plot similar to reference PNG
+# -----------------------------------------
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Convert time → angle (full 360° sweep across window)
+# If you already have a true angle sensor, replace this.
+theta = np.linspace(0, 2*np.pi, len(sig_window))
+
+# Acceleration curve (raw)
+accel_curve = sig_window
+
+# "Information entropy" curve:
+# You can replace this with the real entropy measure if available.
+entropy_curve = fitted_rot  # using fitted sinusoid as proxy
+
+# Example angles (replace with your real angle values if needed)
+toe_angle_deg = 296
+shoulder_angle_deg = 127
+toe_angle = np.deg2rad(toe_angle_deg)
+shoulder_angle = np.deg2rad(shoulder_angle_deg)
+
+# -----------------------------
+# Construct polar-style graphic
+# -----------------------------
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(111, polar=True)
+
+# Acceleration (gray, noisy)
+ax.plot(theta, accel_curve, linewidth=0.7, color='gray', alpha=0.6, label="Acceleration data")
+
+# Entropy (smooth red)
+ax.plot(theta, entropy_curve, color='red', linewidth=1.5, label="Information entropy")
+
+# Angle lines
+ax.plot([toe_angle, toe_angle], [0, np.max(accel_curve)*1.1], color='black', linewidth=1)
+ax.text(toe_angle, np.max(accel_curve)*1.15,
+        f"{toe_angle_deg}°\n(Toe angle)", ha='center')
+
+ax.plot([shoulder_angle, shoulder_angle], [0, np.max(accel_curve)*1.1], color='black', linewidth=1)
+ax.text(shoulder_angle, np.max(accel_curve)*1.15,
+        f"{shoulder_angle_deg}°\n(Shoulder angle)", ha='center')
+
+# Cosmetic adjustments
+ax.set_rlabel_position(135)
+ax.set_title("Acceleration / Entropy vs. Rotation Angle", va='bottom')
+ax.grid(True)
+ax.legend(loc='upper right')
+
+plt.show()
+
+
+
+
 # -------------------------
 # Save results & selected section (with compensated column)
 # -------------------------

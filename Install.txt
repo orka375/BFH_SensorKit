@@ -1,4 +1,11 @@
 
+#Preparing
+
+follow this: https://forums.raspberrypi.com/viewtopic.php?t=376578
+install this: https://github.com/dukelec/mbrush/tree/master/doc/win_driver#readme
+
+Connect Rpi via USB Mini Cable to Laptop
+
 
 #INSTALL
 
@@ -22,10 +29,17 @@ sudo rm /etc/wpa_supplicant/wpa_supplicant.conf
 sudo nano /etc/hostapd/hostapd.conf
 
 # add
+    interface=wlan0
+    driver=nl80211
+    ssid=PiZero_AP
+    hw_mode=g
+    channel=7
+    auth_algs=1
+    ignore_broadcast_ssid=0
 
 
 sudo nano /etc/default/hostapd
-# add
+# change
     DAEMON_CONF="/etc/hostapd/hostapd.conf"
 
 
@@ -44,6 +58,57 @@ sudo systemctl enable dnsmasq
 
 sudo systemctl restart dnsmasq
 sudo systemctl restart hostapd
+
+
+
+✅ Make NetworkManager ignore wlan0 (Bookworm)
+
+Create a config file:
+
+sudo mkdir -p /etc/NetworkManager/conf.d
+sudo nano /etc/NetworkManager/conf.d/wlan0-unmanaged.conf
+
+
+Add:
+
+[keyfile]
+unmanaged-devices=interface-name:wlan0
+
+
+Save → exit → then reload NM:
+
+sudo systemctl restart NetworkManager
+
+
+Create:
+
+sudo nano /etc/systemd/network/08-wlan0.network
+
+
+Insert:
+
+[Match]
+Name=wlan0
+
+[Network]
+Address=192.168.4.1/24
+DHCPServer=no
+
+
+Apply:
+
+sudo systemctl restart systemd-networkd
+
+
+
+# Remove configured network via
+sudo nmtui
+# Delete all Wifi Networks
+# DO NOT STOP NetworkManager.service
+
+sudo systemctl restart hostapd
+
+# Wifi Signal should appear
 
 git clone https://github.com/orka375/BFH_SensorKit.git
 
@@ -74,6 +139,7 @@ User=pi
 WantedBy=multi-user.target
 
 
+#CHECK
 https://stackoverflow.com/questions/57641185/python-program-slower-running-as-a-systemd-than-running-it-from-terminal
 
 

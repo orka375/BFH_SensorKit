@@ -1,4 +1,3 @@
-# läuft auf dem Rapi 
 import json
 import random
 import time
@@ -173,32 +172,32 @@ while True:
                 for ix, s in enumerate(sensors):
                     measure(s, dataarray[ix])
 
-                # Publish only at intervals to reduce network load
-                current_time = time.time()
-                if (current_time - last_publish) >= PUBLISH_INTERVAL:
-                    now = time.time_ns()
+                # # Publish only at intervals to reduce network load
+                # current_time = time.time()
+                # if (current_time - last_publish) >= PUBLISH_INTERVAL:
+                now = time.time_ns()
                     
-                    # Publish sensor data
-                    for ix, s in enumerate(sensors):
-                        topic = "Sensor/" + names[ix]
-                        payload = json.dumps({
-                            "timestamp": now,
-                            "samples": dataarray[ix],
-                        })
-                        # Publish with QoS 0 (fire and forget, no buffering) and retain=False
-                        client.publish(topic, payload, qos=0, retain=False)
-                        # print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
-                        dataarray[ix] = []
-
-                    # Publish frequency
-                    topic = "Sensor/Frequency"
+                # Publish sensor data
+                for ix, s in enumerate(sensors):
+                    topic = "Sensor/" + names[ix]
                     payload = json.dumps({
                         "timestamp": now,
-                        "frequency_hz": round(frequency, 2)
+                        "samples": dataarray[ix],
                     })
+                    # Publish with QoS 0 (fire and forget, no buffering) and retain=False
                     client.publish(topic, payload, qos=0, retain=False)
-                    # print(f"Published frequency: {frequency:.2f} Hz")
-                    last_publish = current_time
+                    # print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
+                    dataarray[ix] = []
+
+                # Publish frequency
+                topic = "Sensor/Frequency"
+                payload = json.dumps({
+                    "timestamp": now,
+                    "frequency_hz": round(frequency, 2)
+                })
+                client.publish(topic, payload, qos=0, retain=False)
+                # print(f"Published frequency: {frequency:.2f} Hz")
+                # last_publish = current_time
 
                 if not button1.is_active:
                     client.loop_stop()

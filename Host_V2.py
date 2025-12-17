@@ -14,7 +14,7 @@ import tkinter as tk
 # Configuration
 # ===============================
 # Laptop
-MQTT_BROKER = "192.168.4.78"
+MQTT_BROKER = "192.168.4.1"
 MQTT_PORT = 1883
 # records
 TOPIC_SENSOR1 = "Sensor/s104"
@@ -26,7 +26,7 @@ INITIAL_POINTS = 100
 
 
 timestring = time.strftime("%d_%m_%H_%M_%S")
-CSV_FILE = "Messungen/Messung_" + timestring + ".csv"
+CSV_FILE = "C:/Users/fra4/OneDrive - Berner Fachhochschule/Desktop/Messungen/Messung_" + timestring + ".csv"
 
 # ===============================
 # Data buffers
