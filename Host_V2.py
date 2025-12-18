@@ -13,26 +13,24 @@ import tkinter as tk
 # ===============================
 # Configuration
 # ===============================
-# Laptop
 MQTT_BROKER = "192.168.4.1"
 MQTT_PORT = 1883
-# records
+
 TOPIC_SENSOR1 = "Sensor/s104"
 TOPIC_SENSOR2 = "Sensor/s105"
-TOPIC_FREQ = "Sensor/Frequency"
+TOPIC_EDGES   = "Sensor/Frequency"   # now edge timestamps
 
 MAX_POINTS = 4600
 INITIAL_POINTS = 100
 
-
 timestring = time.strftime("%d_%m_%H_%M_%S")
-CSV_FILE = "C:/Users/fra4/OneDrive - Berner Fachhochschule/Desktop/Messungen/Messung_" + timestring + ".csv"
+CSV_FILE = ("C:/Users/fra4/OneDrive - Berner Fachhochschule/Desktop/Messungen/"f"Messung_{timestring}.csv")
+# CSV_FILE = f"Messdaten/Messung_{timestring}.csv"
 
 # ===============================
 # Data buffers
 # ===============================
-# Accelerometers
-# definition der Variablen
+# Accelerometer data
 x1_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
 y1_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
 z1_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
@@ -41,44 +39,46 @@ x2_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
 y2_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
 z2_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
 
-freq_data = deque([0]*INITIAL_POINTS, maxlen=MAX_POINTS)
+# Rising edge timestamps
+edge_data = deque(maxlen=MAX_POINTS)
 
 # Message queues
 msg_queue1 = deque()
 msg_queue2 = deque()
-msg_queue_freq = deque()
+msg_queue_edges = deque()
+
 data_lock = threading.Lock()
 
-# Flags to show which sensors are active
+# Activity flags
 sensor1_active = False
 sensor2_active = False
-freq_active = False
+edges_active = False
+
 # ===============================
-# CSV Logging (sensor data + separate frequency file)
+# CSV Logging
 # ===============================
 csv_lock = threading.Lock()
 
-# File names
 SENSOR_CSV_FILE = CSV_FILE
-FREQ_CSV_FILE = CSV_FILE.replace(".csv", "_freq.csv")
+EDGE_CSV_FILE = CSV_FILE.replace(".csv", "_edges.csv")
 
-# Write headers initially
+# Write headers
 with csv_lock:
-    with open(SENSOR_CSV_FILE, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['timestamp','x1','y1','z1','x2','y2','z2'])  # header
+    with open(SENSOR_CSV_FILE, "w", newline="") as f:
+        csv.writer(f).writerow(
+            ["timestamp", "x1", "y1", "z1", "x2", "y2", "z2"]
+        )
 
-    with open(FREQ_CSV_FILE, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['timestamp','frequency_hz'])  # header
+    with open(EDGE_CSV_FILE, "w", newline="") as f:
+        csv.writer(f).writerow(["edge_timestamp"])
 
-# Store the latest known readings
-latest_s1 = {'x': '', 'y': '', 'z': ''}
-latest_s2 = {'x': '', 'y': '', 'z': ''}
+latest_s1 = {"x": "", "y": "", "z": ""}
+latest_s2 = {"x": "", "y": "", "z": ""}
 
-def log_sensor_samples(timestamp, s1_samples=None, s2_samples=None):
+def log_sensor_samples(s1_samples=None, s2_samples=None):
     """
     Logs all sensor samples to the main CSV file.
+    Each sample has its own 't' field (time since run start in seconds).
     """
     global latest_s1, latest_s2
 
@@ -90,203 +90,197 @@ def log_sensor_samples(timestamp, s1_samples=None, s2_samples=None):
                 for s in s1_samples:
                     latest_s1 = s
                     writer.writerow([
-                        timestamp,
+                        s['t'],  # use individual sample timestamp
                         s.get('x', ''), s.get('y', ''), s.get('z', ''),
                         latest_s2.get('x', ''), latest_s2.get('y', ''), latest_s2.get('z', '')
                     ])
 
-            elif s2_samples:
+            if s2_samples:
                 for s in s2_samples:
                     latest_s2 = s
                     writer.writerow([
-                        timestamp,
+                        s['t'],  # use individual sample timestamp
                         latest_s1.get('x', ''), latest_s1.get('y', ''), latest_s1.get('z', ''),
                         s.get('x', ''), s.get('y', ''), s.get('z', '')
                     ])
 
-def log_frequency(timestamp, freq):
-    """
-    Logs frequency data to its own CSV file.
-    """
-    with csv_lock:
-        with open(FREQ_CSV_FILE, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([timestamp, freq])
+
+def log_edges(edge_timestamps):
+    with csv_lock, open(EDGE_CSV_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        for t in edge_timestamps:
+            writer.writerow([t])
 
 
 # ===============================
 # MQTT Callbacks
 # ===============================
 def on_message(client, userdata, msg):
-    global sensor1_active, sensor2_active, freq_active
+    global sensor1_active, sensor2_active, edges_active
 
-    payload = json.loads(msg.payload.decode('utf-8'))
-    timestamp = str(payload.get("timestamp", ""))
+    payload = json.loads(msg.payload.decode("utf-8"))
+    timestamp = payload.get("timestamp", "")
 
     with data_lock:
         if msg.topic == TOPIC_SENSOR1:
-            samples = payload.get('samples', [])
+            samples = payload.get("samples", [])
             if samples:
                 sensor1_active = True
                 msg_queue1.extend(samples)
                 log_sensor_samples(timestamp, s1_samples=samples)
 
         elif msg.topic == TOPIC_SENSOR2:
-            samples = payload.get('samples', [])
+            samples = payload.get("samples", [])
             if samples:
                 sensor2_active = True
                 msg_queue2.extend(samples)
                 log_sensor_samples(timestamp, s2_samples=samples)
 
-        elif msg.topic == TOPIC_FREQ:
-            freq = payload.get('frequency_hz', 0.0)
-            freq_active = True
-            msg_queue_freq.append(freq)
-            log_frequency(timestamp, freq)
+        elif msg.topic == TOPIC_EDGES:
+            edges = payload.get("timestamps", [])
+            if edges:
+                edges_active = True
+                msg_queue_edges.extend(edges)
+                log_edges(edges)
 
 
 def on_connect(client, userdata, flags, rc, properties):
     print(f"Connected to MQTT broker with code {rc}")
-    # Subscribe with QoS 0 (no buffering/persistence)
-    client.subscribe([(TOPIC_SENSOR1, 0), (TOPIC_SENSOR2, 0), (TOPIC_FREQ, 0)])
-    print(f"Subscribed to {TOPIC_SENSOR1}, {TOPIC_SENSOR2}, {TOPIC_FREQ}")
+    client.subscribe([
+        (TOPIC_SENSOR1, 0),
+        (TOPIC_SENSOR2, 0),
+        (TOPIC_EDGES, 0),
+    ])
 
 
 # ===============================
 # Plot setup
 # ===============================
-fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-(ax1, ax2, ax3) = axs
+fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=False)
+ax1, ax2, ax3 = axs
 fig.suptitle("Real-Time Sensor Data")
 
-# --- Sensor 1 ---
-line1x, = ax1.plot([], [], 'r', label='X')
-line1y, = ax1.plot([], [], 'g', label='Y')
-line1z, = ax1.plot([], [], 'b', label='Z')
+# Sensor 1
+line1x, = ax1.plot([], [], "r", label="X")
+line1y, = ax1.plot([], [], "g", label="Y")
+line1z, = ax1.plot([], [], "b", label="Z")
 ax1.set_ylim(-22, 22)
 ax1.set_ylabel("Accel s104 (g)")
 ax1.legend()
 
-# --- Sensor 2 ---
-line2x, = ax2.plot([], [], 'r', label='X')
-line2y, = ax2.plot([], [], 'g', label='Y')
-line2z, = ax2.plot([], [], 'b', label='Z')
+# Sensor 2
+line2x, = ax2.plot([], [], "r", label="X")
+line2y, = ax2.plot([], [], "g", label="Y")
+line2z, = ax2.plot([], [], "b", label="Z")
 ax2.set_ylim(-22, 22)
 ax2.set_ylabel("Accel s105 (g)")
 ax2.legend()
 
-# --- Frequency ---
-line_freq, = ax3.plot([], [], 'm', label='Frequency (Hz)')
-ax3.set_ylim(0, 200)
-ax3.set_xlabel("Sample")
-ax3.set_ylabel("Freq (Hz)")
-ax3.legend()
+# Rising edges (event plot)
+line_edges, = ax3.plot([], [], "|", markersize=20)
+ax3.set_ylabel("Edges")
+ax3.set_yticks([])
+ax3.set_xlabel("Time (s)")
 
-# Hide all plots initially
 ax1.set_visible(False)
 ax2.set_visible(False)
 ax3.set_visible(False)
+
 
 # ===============================
 # Update function
 # ===============================
 def update(frame):
-    global sensor1_active, sensor2_active, freq_active
+    global sensor1_active, sensor2_active, edges_active
 
     with data_lock:
         while msg_queue1:
             s = msg_queue1.popleft()
-            x1_data.append(s['x'])
-            y1_data.append(s['y'])
-            z1_data.append(s['z'])
+            x1_data.append(s["x"])
+            y1_data.append(s["y"])
+            z1_data.append(s["z"])
+
         while msg_queue2:
             s = msg_queue2.popleft()
-            x2_data.append(s['x'])
-            y2_data.append(s['y'])
-            z2_data.append(s['z'])
-        while msg_queue_freq:
-            f = msg_queue_freq.popleft()
-            freq_data.append(f)
+            x2_data.append(s["x"])
+            y2_data.append(s["y"])
+            z2_data.append(s["z"])
 
-    # Show only active plots
+        while msg_queue_edges:
+            t = msg_queue_edges.popleft()
+            edge_data.append(t)
+
     ax1.set_visible(sensor1_active)
     ax2.set_visible(sensor2_active)
-    ax3.set_visible(freq_active)
+    ax3.set_visible(edges_active)
 
-    # Update Sensor 1
     if sensor1_active:
-        line1x.set_data(range(len(x1_data)), list(x1_data))
-        line1y.set_data(range(len(y1_data)), list(y1_data))
-        line1z.set_data(range(len(z1_data)), list(z1_data))
-        ax1.set_xlim(max(0, len(x1_data) - MAX_POINTS), len(x1_data))
+        line1x.set_data(range(len(x1_data)), x1_data)
+        line1y.set_data(range(len(y1_data)), y1_data)
+        line1z.set_data(range(len(z1_data)), z1_data)
+        ax1.set_xlim(0, len(x1_data))
 
-    # Update Sensor 2
     if sensor2_active:
-        line2x.set_data(range(len(x2_data)), list(x2_data))
-        line2y.set_data(range(len(y2_data)), list(y2_data))
-        line2z.set_data(range(len(z2_data)), list(z2_data))
-        ax2.set_xlim(max(0, len(x2_data) - MAX_POINTS), len(x2_data))
+        line2x.set_data(range(len(x2_data)), x2_data)
+        line2y.set_data(range(len(y2_data)), y2_data)
+        line2z.set_data(range(len(z2_data)), z2_data)
+        ax2.set_xlim(0, len(x2_data))
 
-    # Update Frequency
-    if freq_active:
-        line_freq.set_data(range(len(freq_data)), list(freq_data))
-        ax3.set_xlim(max(0, len(freq_data) - MAX_POINTS), len(freq_data))
+    if edges_active:
+        line_edges.set_data(edge_data, [1]*len(edge_data))
+        ax3.set_xlim(
+            max(0, edge_data[-1] - 5),
+            edge_data[-1] + 0.1
+        )
 
-    return line1x, line1y, line1z, line2x, line2y, line2z, line_freq
+    return line1x, line1y, line1z, line2x, line2y, line2z, line_edges
+
 
 # ===============================
-# Start animation
+# Start animation & MQTT
 # ===============================
 ani = FuncAnimation(fig, update, interval=100, blit=False)
 
-# ===============================
-# MQTT Client
-# ===============================
-# Use clean_session=True to prevent message buffering when disconnected
-client = mqtt.Client(clean_session=True, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+client = mqtt.Client(
+    clean_session=True,
+    callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+)
 client.on_connect = on_connect
 client.on_message = on_message
 client.connect(MQTT_BROKER, MQTT_PORT, 60)
 client.loop_start()
 
-# ===============================
-# Show plot
-# ===============================
 plt.tight_layout()
 plt.show()
 client.loop_stop()
 
+
 # ===============================
-# Cleanup and save prompt
+# Cleanup prompt
 # ===============================
 def cleanup_data_files():
-    """Prompt user to save or delete data files using a GUI dialog."""
-    # Create a hidden root window
     root = tk.Tk()
     root.withdraw()
-    
-    # Show yes/no dialog
+
     response = messagebox.askyesno(
-        "Save Data", 
+        "Save Data",
         "Do you want to save the recorded data?\n\n"
-        f"Files:\n- {os.path.basename(SENSOR_CSV_FILE)}\n- {os.path.basename(FREQ_CSV_FILE)}"
+        f"Files:\n- {os.path.basename(SENSOR_CSV_FILE)}\n"
+        f"- {os.path.basename(EDGE_CSV_FILE)}"
     )
-    
-    if response:  # User clicked Yes
+
+    if response:
         messagebox.showinfo(
             "Data Saved",
-            f"Data saved to:\n\n{SENSOR_CSV_FILE}\n{FREQ_CSV_FILE}"
+            f"Data saved to:\n\n{SENSOR_CSV_FILE}\n{EDGE_CSV_FILE}"
         )
-    else:  # User clicked No
-        try:
-            if os.path.exists(SENSOR_CSV_FILE):
-                os.remove(SENSOR_CSV_FILE)
-            if os.path.exists(FREQ_CSV_FILE):
-                os.remove(FREQ_CSV_FILE)
-            messagebox.showinfo("Data Deleted", "Data files have been deleted.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error deleting files:\n{e}")
-    
+    else:
+        for f in (SENSOR_CSV_FILE, EDGE_CSV_FILE):
+            if os.path.exists(f):
+                os.remove(f)
+        messagebox.showinfo("Data Deleted", "Data files have been deleted.")
+
     root.destroy()
+
 
 cleanup_data_files()

@@ -1,0 +1,14 @@
+{
+  "input_file": "Messung_14_11_15_30_19.csv",
+  "axis_column": "z1",
+  "selected_time_start_s_rel": 1.797861099243164,
+  "selected_time_end_s_rel": 9.354369401931763,
+  "dominant_frequency_hz": 0.35000000000000003,
+  "rpm": 21.000000000000004,
+  "fit_amplitude": 8.373,
+  "fit_phase_rad": -1.5208979253210992,
+  "fit_offset": 0.13210203330752712,
+  "expected_centrifugal_r_omega2": 0.9188601697414192,
+  "timestamp": "2025-11-18T13:32:04.965746",
+  "selected_csv": "Messung_14_11_15_30_19_selected_20251118_133204.csv"
+}

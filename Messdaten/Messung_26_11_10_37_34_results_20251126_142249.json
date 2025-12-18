@@ -1,0 +1,28 @@
+{
+  "input_file": "Messung_26_11_10_37_34.csv",
+  "selected_section_indices": {
+    "start_idx": 0,
+    "end_idx": 2581
+  },
+  "selected_section_times_abs": {
+    "start_s": 1758207029.88709,
+    "end_s": 1758207045.8639104
+  },
+  "gravity_offsets": {
+    "gx": NaN,
+    "gy": NaN,
+    "gz": NaN
+  },
+  "timestamp": "2025-11-26T14:22:50.841580",
+  "per_axis": {
+    "x": null,
+    "y": null,
+    "z": null
+  },
+  "freq_stats": {
+    "file": "Messung_26_11_10_37_34_freq.csv",
+    "valid_samples": 2582,
+    "total_samples": 2582,
+    "avg_hz": 2.7470604182804026
+  }
+}

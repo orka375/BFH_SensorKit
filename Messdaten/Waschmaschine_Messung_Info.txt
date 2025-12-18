@@ -1,0 +1,27 @@
+WM
+
+10_37_34 = @ 2 = 2.75 Hz = 165 RPM
+10_38_26 = @ 3 = 300 Hz = 
+10_39_07 = @ 4 = 12.2 Hz
+10_39_51 = @ 5 581.1 Hz 		!! TOP OUT !! >20G (inkl. Gravitation)
+10_40_22  = @ 6 = 19.3 Hz		!! TOP OUT !!
+10_41_54 = @ 7 = 21 Hz			!! TOP OUT !!
+11_19_16 = @ 3 = 48 Hz --> Stimmt nicht (34/1266 brauchbare Messsamples freq)
+
+
+Versuch 2 Sensor auf Seite
+
+12_03_20 = @ 5
+12_04_29 = @ 6				!! TOP OUT !! --> MAX LEVEL 5
+
+
+
+
+----
+12_09_34 für Freq @ 5  = 15.65 Hz 
+12_12_15  = @ 3 = 
+12_18_03  = @3 für Freq = 6.22 Hz
+
+
+12_38_23 = @2 seitwärts
+12_39_22 = @2 oben, + Bild Timeplot

@@ -1,0 +1,11 @@
+Waschmaschine
+14_11_13_55_19 = Sensor senkrecht auf Z Achse, Auslenken von Hand
+
+
+
+
+Trommelmühle:
+14_11_15_12_30 = mehrere Steine mit Mittel, Hand antrieb
+14_11_15_15_01 = mehrere Steine, dünn, Handantrieb, --> FEHLERHAFT
+14_11_15_30_19 = mehrere Steine, dick, Handantrieb
+14_11_15_38_00 = mehrere Steine, dünn, Handantrieb

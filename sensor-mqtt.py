@@ -1,220 +1,274 @@
-# läuft auf dem Rapi 
 import json
-import random
 import time
-import subprocess
-import re
+import threading
 import paho.mqtt.client as mqtt
-from gpiozero import RGBLED, Button
-from gpiozero import DigitalInputDevice
-
-from time import sleep
-from Functions import *
+from gpiozero import RGBLED, Button, DigitalInputDevice
 from mpu6050 import mpu6050
-import time
+from Functions import *
 
 
+# ======================================================
+# TIME
+# ======================================================
+start_time = None
+
+def abs_time():
+    """Seconds since entering Running state (5-digit precision)."""
+    if start_time is None:
+        return 0.0
+    return round(time.time() - start_time, 5)
 
 
-# Define RGB LED pins (change as needed)
+# ======================================================
+# HARDWARE
+# ======================================================
 led = RGBLED(red=13, green=19, blue=6)
-button1 = Button(10,pull_up=False)
-button2 = Button(9,pull_up=False)
+
+button1 = Button(10, pull_up=False)
+button2 = Button(9, pull_up=False)
+
 freq_pin = DigitalInputDevice(21)
 
 
-last_edge_time = None
-frequency = 0.0
+# ======================================================
+# GLOBAL STATE
+# ======================================================
+client = None
+sensors = []
+dataarray = []
+names = []
+
+edge_timestamps = []
+
+EDGE_PUBLISH_INTERVAL = 0.2
+last_edge_publish = time.time()
+
+data_lock = threading.Lock()
+
+measure_thread = None
+measure_running = threading.Event()
 
 
+# ======================================================
+# EDGE CALLBACK (NO MQTT HERE)
+# ======================================================
 def on_rising_edge():
-    global last_edge_time, frequency
-    now = time.time()
-    if last_edge_time is not None:
-        period = now - last_edge_time
-        if period > 0:
-            frequency = 1.0 / period
-    last_edge_time = now
+    if start_time is None:
+        return
+
+    with data_lock:
+        edge_timestamps.append(abs_time())
+
 
 freq_pin.when_activated = on_rising_edge
 
+
+# ======================================================
+# CONNECTIONS
+# ======================================================
 def connectHW():
-
     addresses = [0x69, 0x68]
-    connected = False
-    sensors = []
-    dataarray = []
-    names = []
+    sensors_local = []
+    data_local = []
+    names_local = []
 
-    while not connected:
+    while not sensors_local:
         for addr in addresses:
             try:
-                sensor = mpu6050(addr)
-                sensors.append(sensor)
-                name = "s"+str(addr)
-                names.append(name)
-                dataarray.append([])
+                s = mpu6050(addr)
+                sensors_local.append(s)
+                data_local.append([])
+                names_local.append(f"s{addr}")
                 print(f"Connected to MPU6050 at 0x{addr:02X}")
-                connected = True
-            except (TimeoutError, OSError) as e:
-                print(f"No response from 0x{addr:02X}: {e}")
-        if not connected:
+            except (OSError, TimeoutError):
+                pass
+
+        if not sensors_local:
             time.sleep(1)
-    
-    return sensors,dataarray,names
 
-def connectHost():
+    return sensors_local, data_local, names_local
 
-    # broker_ip = None
-    # print("Waiting for a client to connect to the Pi AP...")
-    # while broker_ip is None:
-    #     broker_ip = get_single_client_ip()
-    #     time.sleep(1)
-
-    # print(f"Detected client IP: {broker_ip}")
-    return "127.0.0.1"
 
 def connectBroker(broker_ip="127.0.0.1"):
-
-    
-    # Use clean_session=True to prevent message buffering when host is not connected
-    client = mqtt.Client(client_id="sim_accel_pub", clean_session=True, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
-    retry_delay = 5  # seconds between retries
+    c = mqtt.Client(
+        client_id="sim_accel_pub",
+        clean_session=True,
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+    )
 
     while True:
         try:
-            client.connect(broker_ip, 1883, 60)
-            print(f"Connected to MQTT broker at {broker_ip}")
-            break  # exit loop if successful
+            c.connect(broker_ip, 1883, 60)
+            print("Connected to MQTT broker")
+            break
         except TimeoutError:
-            time.sleep(retry_delay)
+            time.sleep(5)
 
-    client.loop_start()
-    print(f"Publishing accelerometer data to {broker_ip}...")
-    return client
-
-
-def measure(sensor,array):
-    try:
-        # --- Sample accelerometer data ---
-        accel = sensor.get_accel_data()
-        # Store full reading with timestamp
-        array.append({
-            "t": time.time_ns(),
-            "x": round(accel["x"], 3),
-            "y": round(accel["y"], 3),
-            "z": round(accel["z"], 3)
-        })
-    except IOError:
-        print("Caught IOError")
-        pass
-
-            
-
-    
-       
+    c.loop_start()
+    return c
 
 
-last_publish = time.time()
+# ======================================================
+# MEASUREMENT THREAD
+# ======================================================
+def measure_loop():
+    """Continuously sample accelerometers while running."""
+    while measure_running.is_set():
+        with data_lock:
+            for ix, s in enumerate(sensors):
+                try:
+                    accel = s.get_accel_data()
+                    dataarray[ix].append({
+                        "t": abs_time(),
+                        "x": round(accel["x"], 3),
+                        "y": round(accel["y"], 3),
+                        "z": round(accel["z"], 3)
+                    })
+                except IOError:
+                    pass
 
-# Publish interval in seconds (e.g., 0.2 = publish every 200ms)
-PUBLISH_INTERVAL = 0.2  # Adjust as needed
+        # Slight delay to avoid maxing CPU (adjust/remove if needed)
+        time.sleep(0.001)
 
-# ------------ STATEMACHINE ---------------
+
+# ======================================================
+# BUFFER FLUSHING (CRITICAL)
+# ======================================================
+def flush_all_buffers():
+    """Publish all remaining buffered data."""
+    now = abs_time()
+
+    with data_lock:
+        for ix in range(len(sensors)):
+            if dataarray[ix]:
+                client.publish(
+                    f"Sensor/{names[ix]}",
+                    json.dumps({
+                        "timestamp": now,
+                        "samples": dataarray[ix]
+                    }),
+                    qos=0,
+                    retain=False
+                )
+                dataarray[ix].clear()
+
+        if edge_timestamps:
+            client.publish(
+                "Sensor/Frequency",
+                json.dumps({
+                    "timestamps": edge_timestamps
+                }),
+                qos=0,
+                retain=False
+            )
+            edge_timestamps.clear()
+
+
+# ======================================================
+# STATE MACHINE
+# ======================================================
 state = States.Default
+
 while True:
     try:
-
         if button2.is_active:
-            raise Exception
-
+            raise Exception("Reset pressed")
 
         match state:
 
-            case States.Default: #OFF
+            # --------------------------------------------------
+            case States.Default:
                 led.off()
                 time.sleep(1)
                 state = States.SettingUpHW
-        
-            case States.SettingUpHW: #RED
+
+            # --------------------------------------------------
+            case States.SettingUpHW:
                 led.color = (1, 0, 0)
-                sensors,dataarray,names = connectHW()
-                state = States.ConnectingHost
-            
-            case States.ConnectingHost: #ORANGE
-                led.color = (1, 0.45, 0)
-                hostIP = connectHost()
+                sensors, dataarray, names = connectHW()
                 state = States.ConnectingBroker
-            
-            case States.ConnectingBroker: #YELLOW
+
+            # --------------------------------------------------
+            case States.ConnectingBroker:
                 led.color = (1, 1, 0)
-                client = connectBroker(hostIP)
+                client = connectBroker()
+                down = False
                 state = States.Idelling
 
-                down = False
-
-            case States.Idelling: #BLUE
+            # --------------------------------------------------
+            case States.Idelling:
                 led.color = (0, 0, 1)
 
                 if not button1.is_active:
-                    down=True
+                    down = True
                 if button1.is_active and down:
                     state = States.Preparing
 
-            case States.Preparing: #BLUE BLINK
-                led.blink(on_time=0.5, off_time=0.5, on_color=(0,0,1),n=5,background=False)
-                state = States.Running
-                
+            # --------------------------------------------------
+            case States.Preparing:
+                led.blink(
+                    on_time=0.5,
+                    off_time=0.5,
+                    on_color=(0, 0, 1),
+                    n=5,
+                    background=False
+                )
 
-            case States.Running: #GREEN
+                # Reset run state
+                start_time = time.time()
+
+                with data_lock:
+                    edge_timestamps.clear()
+                    for arr in dataarray:
+                        arr.clear()
+
+                last_edge_publish = time.time()
+
+                # Start measurement thread
+                measure_running.set()
+                measure_thread = threading.Thread(
+                    target=measure_loop,
+                    daemon=True
+                )
+                measure_thread.start()
+
+                state = States.Running
+
+            # --------------------------------------------------
+            case States.Running:
                 led.color = (0, 1, 0)
 
-                # Read sensor data as fast as possible
-                for ix, s in enumerate(sensors):
-                    measure(s, dataarray[ix])
+                # Periodic publishing
+                now_wall = time.time()
+                if (now_wall - last_edge_publish) >= EDGE_PUBLISH_INTERVAL:
+                    flush_all_buffers()
+                    last_edge_publish = now_wall
 
-                # Publish only at intervals to reduce network load
-                current_time = time.time()
-                if (current_time - last_publish) >= PUBLISH_INTERVAL:
-                    now = time.time_ns()
-                    
-                    # Publish sensor data
-                    for ix, s in enumerate(sensors):
-                        topic = "Sensor/" + names[ix]
-                        payload = json.dumps({
-                            "timestamp": now,
-                            "samples": dataarray[ix],
-                        })
-                        # Publish with QoS 0 (fire and forget, no buffering) and retain=False
-                        client.publish(topic, payload, qos=0, retain=False)
-                        # print(f"Published Sensor {names[ix]} data ({len(dataarray[ix])} points)")
-                        dataarray[ix] = []
-
-                    # Publish frequency
-                    topic = "Sensor/Frequency"
-                    payload = json.dumps({
-                        "timestamp": now,
-                        "frequency_hz": round(frequency, 2)
-                    })
-                    client.publish(topic, payload, qos=0, retain=False)
-                    # print(f"Published frequency: {frequency:.2f} Hz")
-                    last_publish = current_time
-
+                # Stop run
                 if not button1.is_active:
+                    measure_running.clear()
+                    measure_thread.join(timeout=1.0)
+
+                    flush_all_buffers()
+
                     client.loop_stop()
                     client.disconnect()
+
                     state = States.ConnectingBroker
 
-                
-
-
-
-
     except Exception as e:
-        print(e)
+        print("ERROR:", e)
+
+        try:
+            measure_running.clear()
+            if measure_thread:
+                measure_thread.join(timeout=1.0)
+
+            if client:
+                flush_all_buffers()
+                client.loop_stop()
+                client.disconnect()
+        except Exception:
+            pass
+
         state = States.Default
-
-
-led.color = (0, 1, 0) #GREEN
-
-
